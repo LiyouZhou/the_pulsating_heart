@@ -4,9 +4,8 @@
 #include <Ticker.h>
 
 #include "Font5x55pt7b.h"
-
 #include <ESP8266WiFi.h>
-#include <Adafruit_MQTT.h>
+#include "FS.h"#include <Adafruit_MQTT.h>
 #include <Adafruit_MQTT_Client.h>
 #include <IRremoteESP8266.h>
 
@@ -49,7 +48,7 @@ bool first_connect = false;
 char msg_buf[100] = {0};
 
 /* neopixel pin */
-#define PIN D4
+#define PIN D8
 
 /* globals to be used by text scroller */
 Ticker scroller;
@@ -218,20 +217,92 @@ void mqtt_msg_callback(char* buf, uint16_t len)
     state = STATE_EMIT;
 }
 
-void emit()
+uint16_t colour_name_to_colour(char* buf)
 {
-    if (!first_connect)
+    uint16_t color = 0;
+
+    if (strcmp(msg_buf+1, "BLUE") == 0)
     {
-        uint16_t len = strnlen(msg_buf, 100);
-        if (len > 0 && len < 100)
-        {
-            memcpy(scroll_buf, msg_buf, len);
-            scroll_buf[len] = 0;
-            scrollText();
-        }
+        color = BLUE;
+    }
+    else if (strcmp(msg_buf+1, "GREEN") == 0)
+    {
+        color = GREEN;
+    }
+    else if (strcmp(msg_buf+1, "CYAN") == 0)
+    {
+        color = CYAN;
+    }
+    else if (strcmp(msg_buf+1, "MAGENTA") == 0)
+    {
+        color = MAGENTA;
+    }
+    else if (strcmp(msg_buf+1, "YELLOW") == 0)
+    {
+        color = YELLOW;
+    }
+    else if (strcmp(msg_buf+1, "WHITE") == 0)
+    {
+        color = WHITE;
+    }
+    else if (strcmp(msg_buf+1, "RED") == 0)
+    {
+        color = RED;
     }
 
-    first_connect = false;
+    return color;
+}
+
+void emit()
+{
+    uint16_t len = strnlen(msg_buf, 100);
+    if (len > 0 && len < 100)
+    {
+        uint8_t intensity, r, g, b;
+        uint16_t color;
+
+        switch(msg_buf[0])
+        {
+            case int('0'):
+                intensity = atoi(msg_buf+1);
+                matrix.setBrightness(intensity);
+                break;
+
+            case int('1'):
+                matrix.setTextColor(colour_name_to_colour(msg_buf+1));
+                break;
+
+            case int('2'):
+                r = atoi(msg_buf+1);
+                g = atoi(msg_buf+5);
+                b = atoi(msg_buf+9);
+                color = uint8_t(r / float(UINT8_MAX) * 0x11111) << 11 |
+                        uint8_t(g / float(UINT8_MAX) * 0x111111) << 5 |
+                        uint8_t(b / float(UINT8_MAX) * 0x11111);
+                Serial.println(r);
+                Serial.println(g);
+                Serial.println(b);
+                Serial.println(color);
+                matrix.setTextColor(color);
+                break;
+
+            case int('3'):
+                /* stop any ongoing scroll */
+                scroller.detach();
+                /* fill screen */
+                matrix.fillScreen(colour_name_to_colour(msg_buf+1));
+                break;
+
+            default:
+                memcpy(scroll_buf, msg_buf, len);
+                scroll_buf[len] = 0;
+                scrollText();
+                break;
+        }
+
+        /* flush to display */
+        matrix.show();
+    }
 }
 
 void setup()
@@ -259,7 +330,7 @@ void setup()
     /* setup display */
     matrix.begin();
     matrix.setTextWrap(false);
-    matrix.setBrightness(100);
+    matrix.setBrightness(10);
     matrix.setTextColor(RED);
     matrix.setFont(&Font5x55pt7b);
     matrix.setRemapFunction(myRemapFn);
@@ -268,8 +339,10 @@ void setup()
     matrix.fillScreen(0);
 
     /* draw a heart */
-    matrix.drawBitmap(1, 2, large_heart, 7, 7, RED);
-    matrix.show();
+//    matrix.drawBitmap(1, 2, large_heart, 7, 7, RED);
+//    matrix.show();
+    char s[] = "Still Hacking Anyway...";
+    mqtt_msg_callback(s, strlen(s));
 
     /* setup feed callback and subscribe */
     display_msg_feed.setCallback(mqtt_msg_callback);
